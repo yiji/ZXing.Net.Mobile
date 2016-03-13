@@ -1,12 +1,12 @@
-#addin "Cake.FileHelpers"
-#addin "Cake.Xamarin"
+#addin nuget:https://nuget.org/api/v2/?package=Cake.FileHelpers&version=1.0.3.2
+#addin nuget:https://nuget.org/api/v2/?package=Cake.Xamarin&version=1.2.3
 
 var target = Argument("target", "Default");
 var version = EnvironmentVariable ("APPVEYOR_BUILD_VERSION") ?? Argument("version", "2.0.0.9999");
 
 var libs = new Dictionary<string, string> {
-	{ "./ZXing.Net.Mobile.sln", "Any" },
-	{ "./ZXing.Net.Mobile.Forms.sln", "Any" }
+ 	{ "./ZXing.Net.Mobile.sln", "Any" },
+ 	{ "./ZXing.Net.Mobile.Forms.sln", "Any" }
 };
 
 var samples = new Dictionary<string, string> {
@@ -31,6 +31,9 @@ var buildAction = new Action<Dictionary<string, string>> (solutions => {
 			
 			// Bit of a hack to use nuget3 to restore packages for project.json
 			if (IsRunningOnWindows ()) {
+				
+				Information ("RunningOn: {0}", "Windows");
+
 				NuGetRestore (sln.Key, new NuGetRestoreSettings {
 					ToolPath = "./tools/nuget3.exe"
 				});
@@ -38,7 +41,7 @@ var buildAction = new Action<Dictionary<string, string>> (solutions => {
 				// Windows Phone / Universal projects require not using the amd64 msbuild
 				MSBuild (sln.Key, c => { 
 					c.Configuration = "Release";
-					c.MSBuildPlatform = MSBuildPlatform.x86;
+					c.MSBuildPlatform = Cake.Common.Tools.MSBuild.MSBuildPlatform.x86;
 				});
 			} else {
 
@@ -56,12 +59,14 @@ Task ("libs").Does (() =>
 	buildAction (libs);
 });
 
-Task ("samples").Does (() => 
+Task ("samples")
+	.IsDependentOn ("libs")
+	.Does (() => 
 {
 	buildAction (samples);
 });
 
-Task ("nuget").IsDependentOn ("libs").Does (() => 
+Task ("nuget").IsDependentOn ("samples").Does (() => 
 {
 	// Make sure our output path is there
 	if (!DirectoryExists ("./Build/nuget/"))
@@ -73,10 +78,14 @@ Task ("nuget").IsDependentOn ("libs").Does (() =>
 });
 
 Task ("component")
-	//.IsDependentOn ("samples")
+	.IsDependentOn ("samples")
 	.IsDependentOn ("nuget")
 	.Does (() => 
 {
+	var compVersion = version;
+	if (compVersion.Contains ("-"))
+		compVersion = compVersion.Substring (0, compVersion.IndexOf ("-"));
+
 	// Clear out xml files from build (they interfere with the component packaging)
 	DeleteFiles ("./Build/**/*.xml");
 
@@ -85,7 +94,7 @@ Task ("component")
 	CopyFile ("./Component-Forms/component.template.yaml", "./Component-Forms/component.yaml");
 
 	// Replace version in template files
-	ReplaceTextInFiles ("./**/component.yaml", "{VERSION}", version);
+	ReplaceTextInFiles ("./**/component.yaml", "{VERSION}", compVersion);
 
 	var xamCompSettings = new XamarinComponentSettings { ToolPath = "./tools/xamarin-component.exe" };
 
